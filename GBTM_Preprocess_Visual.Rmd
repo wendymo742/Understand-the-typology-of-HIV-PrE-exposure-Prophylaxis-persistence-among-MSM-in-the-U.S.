@@ -1,0 +1,136 @@
+---
+title: "Group-based trajectory modeling: data pre-processing & findings visualization"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+setwd("C:/Users/yche465/Desktop/CS570/Project")
+
+############################################################################
+# Data Pre-processing for GBTM analysis
+#########################################################################
+
+#Import the biweekly time series of days under medication (DUM)
+GroupTraj_Data <- read.csv(file = "DrugDay.csv", header = TRUE)
+
+#Create a helper function to import stage-I cluster membership pickle file and subset the time series data of DUM accordingly
+library(reticulate)
+prepdata=function(S1Members,file){
+  #Import pickle label data into R space
+  require("reticulate")
+  py_install("pandas")
+  source_python("ReadPythonPickle.py")
+  S1Members <- read_pickle_file(file)
+  
+  g1=GroupTraj_Data[S1Members[[1]],]
+  g2=GroupTraj_Data[S1Members[[2]],]
+  g3=GroupTraj_Data[S1Members[[3]],]
+  g4=GroupTraj_Data[S1Members[[4]],]
+  
+  selected=rbind(g1,g2,g3,g4)
+  return(S1Members)
+}
+
+#implement the helper function - use stratification sampling (stratified by stage-I cluster membership & at 15%) to subset the DUM data
+DUM=prepdata(S1Members_15,"S1Members_15")
+
+#Export the DUM subset as a csv file for later use in SAS
+#write.csv(DUM,"C:/Users/yche465/Desktop/CS570/Project/DrugDay15.csv", row.names = TRUE)
+
+
+#############################################################################################
+# GBTM Data visualization
+#############################################################################################
+library(zoo)
+
+#Import GBTM weighted average and model prediction to R
+AvgPred <- read.csv(file = "AvgPred.csv", header = TRUE)
+AvgPred=AvgPred[,1:15]
+
+Est_Pct <- read.csv(file = "Est_Pct.csv", header = TRUE)
+Cluster_P=Est_Pct[,"PI"]
+
+#Create a helper function to compute weekly time series of PDC over the subsequent 14 days
+Comp_PDC=function(var){
+    #Set up time horizon objects for later use
+  Biweekly_horizon=seq(0,728,14)
+  start=seq(0,714,7)
+  end=start+14
+  
+  #set up a PrEP-naive daily time series of medication use
+  DC=rep(0,728)
+  
+  #extract the dates of medication use given the input parameter
+  set.seed(1)
+  date_under_med=c()
+  days_under_med=round(var*14)
+  for (i in 1:length(days_under_med)){
+    d=sort(sample(seq(Biweekly_horizon[i]+1,Biweekly_horizon[i+1]),days_under_med[i]))
+    date_under_med=c(date_under_med,d)
+  }
+  
+  #update the daily time series of medication use
+  DC[date_under_med]=1
+  
+  #Compute the weekly PDC over subsuequent 14 days
+  PDC=c()
+  for (i in 1:length(start)){
+    p=mean(DC[start[i]:end[i]])
+    PDC=c(PDC,p)
+  }
+  
+  PDC_MA=rollmean(PDC,4,fill=NA)
+  
+  return(PDC_MA)
+}
+
+
+#Create data frame storing the cluster-specific PDC time series
+
+COL=colnames(AvgPred)[-1]
+PDC_DF=data.frame(Week=rep(seq(1,103),length(COL)))
+
+
+  ##Variable 1: PDC
+  PDC=c()
+  for (i in 1:length(COL)){
+    p=Comp_PDC(as.vector(t(AvgPred[COL[i]])))
+    PDC=c(PDC,p)
+  }
+  PDC_DF['PDC']=PDC
+  
+  ##Variable 2: Cluster membership
+  CT=c("Cluster 1","Cluster 2","Cluster 3","Cluster 4","Cluster 5","Cluster 6","Cluster 7")
+  CP=round(Cluster_P,1)
+  for (i in 1:length(CP)){
+    CT[i]=paste(CT[i]," (",CP[i],"%)",sep="")
+  }
+
+  Cluster=rep(CT,2)
+  Cluster2=c()
+  for (i in 1:length(Cluster)){
+    c=rep(Cluster[i],103)
+    Cluster2=c(Cluster2,c)
+  }
+  PDC_DF['Cluster']=Cluster2
+  
+  ##Variable 3: Prediction vs average
+  Measure=c(rep("Weighted average",dim(PDC_DF)[1]/2),rep("Predicted mean",dim(PDC_DF)[1]/2))
+  PDC_DF['Measure']=Measure
+
+
+#Plot the model prediction and averages
+# Libraries
+library(ggplot2)
+library(dplyr)
+
+PDC_DF %>%
+  ggplot( aes(x=Week, y=PDC, color=Cluster,linetype=Measure)) +
+  geom_line() +
+  ggtitle("Weighted average vs. predicted mean PDC over time, \n censored normal mixture model (moving average smoothing)") +
+  ylab("PDC")
+
+
+```
