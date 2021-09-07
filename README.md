@@ -1,1 +1,1 @@
-# Understand-the-typology-of-HIV-PrE-exposure-Prophylaxis-persistence-among-MSM-in-the-U.S.
+This is a group project working on analysis the typology of HIV PrE exposure prophylaxis persistence among MSM (men having sex with men) in the US. The dataset is confidential, we start working with the fake dataset and then apply to the real dataset by the professionals. We settle the problem down via two approaches -- two-stage clustering and Graph Based Trajectory Modeling.tand-the-typology-of-HIV-PrE-exposure-Prophylaxis-persistence-among-MSM-in-the-U.S.
